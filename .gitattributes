@@ -1,0 +1,10 @@
+# Normalise line endings in the repository, not in the working tree.
+#
+# Without this, Windows checkouts rewrite LF to CRLF and every commit looks like
+# it touched every line — which is exactly what a reviewer must not have to sift
+# through on the first pull request.
+* text=auto eol=lf
+
+# Binary files must never be line-ending converted.
+*.png binary
+*.ico binary

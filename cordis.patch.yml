@@ -1,0 +1,10 @@
+# dsh-persona-manager: one Host row.
+#
+# The Host half owns the preset library (a JSON file under $DSH_HOME) and
+# registers every library entry through the official `agentPresets` service.
+# The Client half renders the management page in Settings. Neither half edits
+# the profile patch: user-managed presets live in the plugin's own state file,
+# and presets declared by other bundles stay untouched and read-only.
+- insert:
+    - id: persona-manager
+      name: dsh-persona-manager

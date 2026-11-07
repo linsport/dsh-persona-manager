@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Persona presets">
+  <rect x="6" y="8" width="52" height="48" rx="10" fill="none" stroke="currentColor" stroke-width="3"/>
+  <circle cx="24" cy="26" r="6" fill="none" stroke="currentColor" stroke-width="3"/>
+  <path d="M14 46c2-6 6-9 10-9s8 3 10 9" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+  <path d="M40 22h10M40 31h10M40 40h6" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+</svg>
