@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # The plugin is used on Windows, and its path handling and YAML surgery are
+    # the parts most likely to differ per platform — so that is where it runs.
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # Only the dev dependency (the YAML parser the round-trip assertions need).
+      # The plugin itself declares none: it resolves the deployment-provided
+      # `yaml` at runtime, so nothing here changes what users install.
+      - name: Install test dependency
+        run: npm install --no-audit --no-fund
+
+      - name: Host half
+        run: node tools/smoke-host.mjs
+
+      - name: Client half
+        run: node tools/smoke-client.mjs
+
+      - name: Profile patch surgery
+        run: node tools/smoke-patch.mjs

@@ -29,6 +29,12 @@
     "persona"
   ],
   "license": "MIT",
+  "scripts": {
+    "test": "node tools/smoke-host.mjs && node tools/smoke-client.mjs && node tools/smoke-patch.mjs"
+  },
+  "devDependencies": {
+    "yaml": "^2.5.0"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

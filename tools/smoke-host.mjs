@@ -456,6 +456,43 @@ check('a path traversal is refused', result.body.ok === false, JSON.stringify(re
 // Reading examples must not create anything.
 check('examples do not create presets', !registered.has('鲸鱼娘'));
 
+/* ------------------------------ a folded persona is refused, not corrupted */
+
+// `>` joins every newline into a space. Writing an ordinary block under it would
+// collapse the user's paragraphs and still report success, so the Host must
+// surface a refusal the page can show.
+{
+  const foldedDir = join(home, 'profiles', 'folded');
+  await mkdir(foldedDir, { recursive: true });
+  const foldedFile = join(foldedDir, 'cordis.patch.yml');
+  await writeFile(foldedFile, [
+    '- insert:',
+    '    - id: preset-folded',
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:',
+    '        id: folded',
+    '        name: 折行模式',
+    '        plugins:',
+    '          - id: persona',
+    "            name: '@deepseek-ai/dsh-persona'",
+    '            config:',
+    '              prefix: >',
+    '                第一段。',
+    '                第二行。',
+    '',
+  ].join('\n'), 'utf8');
+  const beforeFolded = readFileSync(foldedFile, 'utf8');
+
+  result = await call('update', { id: 'folded', persona: '新正文\n第二行' });
+  check('a folded persona is refused', result.body.ok === false, JSON.stringify(result.body));
+  check(
+    'the refusal explains why',
+    typeof result.body.error === 'string' && result.body.error.includes('folded'),
+    JSON.stringify(result.body.error),
+  );
+  check('the folded file was not touched', readFileSync(foldedFile, 'utf8') === beforeFolded);
+}
+
 /* ------------------------------------- shipped presets are not editable */
 
 result = await call('update', { id: 'standard', persona: 'nope' });
