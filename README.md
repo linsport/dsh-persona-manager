@@ -180,6 +180,14 @@ DSH 的一个 Agent 预设，本质是一串 Cordis 插件列表：一段人设�
 
 说明这个预设在你的 `cordis.patch.yml` 里有独立一行，不是本插件库里的一条记录。它的保存路径是那一行本身。
 
+**改 profile 的 `package.json` 之后，网页打不开了 / 一直要认证？**
+
+这是桌面版的一个连带反应：改动 profile 的 `package.json` 会让 web 服务重新加载，访问令牌随之更换，旧地址就返回 401。重启 DSH 桌面端即可，端口号会变，**用新弹出的窗口地址**。
+
+同一条原因还带来另一个现象：**改完 `package.json` 后插件不会立刻出现在插件树里**，loader 不会因为文件变化就重扫 bundles，得重启桌面端才生效。
+
+这两条只影响「手动编辑 profile 配置」的场合；在插件管理界面里开关本插件不会碰到。
+
 ---
 
 ## 数据存在哪
@@ -200,11 +208,17 @@ DSH 的一个 Agent 预设，本质是一串 Cordis 插件列表：一段人设�
 
 ## 安装
 
+**桌面版（推荐）**：打开 **设置 → 插件**，安装或启用 `dsh-persona-manager`，然后打开 **设置 → 人设预设**。桌面端会自己启动 web 服务，装完不需要单独跑命令；浏览器端代码更新后按 `Ctrl + F5` 强刷。
+
+**命令行**：
+
 ```bash
 dsh plugin --profile <profile> add dsh-persona-manager
 ```
 
-或者用插件管理器指向这个目录。装好后打开 **设置 → 人设预设**。
+或者用插件管理器指向这个目录。
+
+> 如果你手动改了 profile 的 `package.json`，改完要**重启桌面端**插件才会被加载，且网页端口会变——见上一节的说明。
 
 ---
 
@@ -243,7 +257,7 @@ dsh plugin --profile <profile> add dsh-persona-manager
 
 ## 运行要求
 
-- 一个提供 `agentPresets` 和 `webServer` 两个服务的 DSH 版本（预设机制从 DSH 0.1.7 起存在）。
+- 一个提供 `agentPresets` 和 `webServer` 两个服务的 DSH 版本（预设机制从 DSH 0.1.7 起存在）。桌面版和命令行版都满足，实测环境为桌面版。
 - `yaml` 包，只用来读基准预设声明的插件列表。它随 DSH 一起发布，所以本插件不声明这个依赖，而是按顺序去找：
   1. `DSH_PROFILE_DIR`（若已设置）；
   2. 每一个 `$DSH_HOME/profiles/*` 目录——profile 启动的 Harness，其 Host 进程不一定导出 `DSH_PROFILE_DIR`；
