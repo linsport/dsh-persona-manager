@@ -56,14 +56,32 @@ if (existsSync(join(realProfile, 'yaml'))) {
 let failures = 0;
 
 import { createRequire } from 'node:module';
-// The deployment ships `yaml`; a plugin checkout does not. Resolve the same way
-// the Host half does, so the test exercises the real lookup path.
+/**
+ * Resolve `yaml` for this test.
+ *
+ * The deployment ships it, and the Host half finds it there — but a checkout
+ * (CI included) does not have a deployment to look in. Try the ordinary module
+ * resolution first so a checkout with the dev dependency installed works, then
+ * fall back to the deployment roots the Host half also tries. Trying the
+ * machine-specific roots first made this test pass locally and fail in CI.
+ */
 function loadYamlForTest() {
-  const roots = [process.env.DSH_PROFILE_DIR, join(homedir(), '.dsh', 'profiles', 'desktop')].filter(Boolean);
+  try {
+    return createRequire(import.meta.url)('yaml');
+  } catch {
+    /* no dev dependency: look where the deployment keeps it */
+  }
+  const roots = [
+    process.env.DSH_PROFILE_DIR,
+    join(homedir(), '.dsh', 'profiles', 'desktop'),
+    join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), '..', '.dsh', 'profiles', 'desktop'),
+  ].filter(Boolean);
   for (const root of roots) {
     try {
       return createRequire(join(root, '__test__.cjs'))('yaml');
-    } catch {}
+    } catch {
+      /* try the next root */
+    }
   }
   return null;
 }
