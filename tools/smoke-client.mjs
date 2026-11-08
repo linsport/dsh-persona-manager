@@ -359,6 +359,63 @@ if (newButton.length === 1) {
       editorPos >= 0 && firstHeading >= 0 && editorPos < firstHeading,
       `editor@${editorPos} heading@${firstHeading}`,
     );
+
+    // --- live statistics and the preview switch -----------------------------
+    const editorText = text(editorTree);
+    check('the editor reports a character count', /0 字/.test(editorText), editorText.slice(0, 200));
+    check('the editor reports a line count', /0 行/.test(editorText));
+    check('the editor reports a paragraph count', /0 段/.test(editorText));
+    const toggles = findAll(editorTree, (n) => n.type === 'button' && text(n) === '预览');
+    check('the persona field carries a preview switch', toggles.length === 1, String(toggles.length));
+
+    if (toggles.length === 1) {
+      // Type a body, then switch to the preview: the textarea must be replaced by
+      // rendered blocks, with the marks gone and the headings kept.
+      const area = findAll(editorTree, (n) => n.type === 'textarea')[0];
+      area.props.onChange({ target: { value: '## 标题\n\n正文 **加粗** 与 `代码`。\n\n- 第一项\n- 第二项' } });
+      hookIndex = 0;
+      pendingEffects = [];
+      const withBody = expand(slots.Component({ close() {} }));
+      const bodyText = text(withBody);
+      check('the count follows the typed text', bodyText.includes('字') && !/0 字/.test(bodyText), bodyText.slice(0, 120));
+
+      const sw = findAll(withBody, (n) => n.type === 'button' && text(n) === '预览');
+      sw[0].props.onClick();
+      hookIndex = 0;
+      pendingEffects = [];
+      const previewTree = expand(slots.Component({ close() {} }));
+      check('preview hides the textarea', findAll(previewTree, (n) => n.type === 'textarea').length === 0);
+      // Scope every count to the preview box: the page has its own h2 title and
+      // the card lists are ul/li too, so a whole-tree count would prove nothing.
+      const previewBox = findAll(previewTree, (n) => n.type === 'div' && n.props.style && n.props.style.maxHeight === '420px');
+      check('the preview box is present', previewBox.length === 1, String(previewBox.length));
+      const scope = previewBox[0] ?? previewTree;
+      check('preview renders a heading', findAll(scope, (n) => n.type === 'h2').length === 1, String(findAll(scope, (n) => n.type === 'h2').length));
+      check('preview renders list items', findAll(scope, (n) => n.type === 'li').length === 2, String(findAll(scope, (n) => n.type === 'li').length));
+      check('preview renders bold and code as elements', findAll(scope, (n) => n.type === 'strong').length === 1 && findAll(scope, (n) => n.type === 'code').length === 1);
+      const previewText = text(scope);
+      check('preview keeps the words', previewText.includes('标题') && previewText.includes('加粗') && previewText.includes('代码'), previewText);
+      // A persona is untrusted text: a tag written in the body must stay visible
+      // text, never become an element. The only `pre` the renderer may produce
+      // comes from an actual ``` fence.
+      {
+        const area2 = findAll(withBody, (n) => n.type === 'textarea')[0];
+        area2.props.onChange({ target: { value: '正文 <img src=x onerror=alert(1)> 结束' } });
+        hookIndex = 0;
+        pendingEffects = [];
+        expand(slots.Component({ close() {} })); // re-render with the new body
+        hookIndex = 0;
+        pendingEffects = [];
+        const injected = expand(slots.Component({ close() {} }));
+        const box = findAll(injected, (n) => n.type === 'div' && n.props.style && n.props.style.maxHeight === '420px')[0];
+        check('a tag written in the body stays text', findAll(box, (n) => n.type === 'img').length === 0);
+        check('and it is still readable', text(box).includes('<img'));
+      }
+      check(
+        'the switch becomes "back to edit"',
+        findAll(previewTree, (n) => n.type === 'button' && text(n) === '返回编辑').length === 1,
+      );
+    }
   }
 }
 
