@@ -1,6 +1,6 @@
 # dsh-persona-manager
 
-在 DeepSeek Harness 的网页设置里管理本机的 Agent 预设（人设）。
+在 DeepSeek Harness 桌面版的设置页里管理本机的 Agent 预设（人设）。
 
 当前版本 **0.1.1**（变更见 [CHANGELOG](CHANGELOG.md)）。
 
@@ -237,7 +237,7 @@ DSH 的一个 Agent 预设，本质是一串 Cordis 插件列表：一段人设�
 
 ## 安装
 
-**桌面版（推荐）**：打开 **设置 → 插件**，安装或启用 `dsh-persona-manager`，然后打开 **设置 → 人设预设**。桌面端会自己启动 web 服务，装完不需要单独跑命令；浏览器端代码更新后按 `Ctrl + F5` 强刷。
+**桌面版是主要安装方式**：打开 **设置 → 插件**，安装或启用 `dsh-persona-manager`，然后打开 **设置 → 人设预设**。桌面端会自己启动本地服务，装完不需要单独跑命令；界面代码更新后按 `Ctrl + F5` 强刷。
 
 **命令行**：
 
