@@ -576,6 +576,19 @@ const refused = await new Promise((resolve) => {
 check('request without the csrf header refused', refused.status === 403);
 check('refused request changed nothing', registered.has('my-persona'));
 
+/* ------------------------------------------------------ package manifest */
+
+{
+  // A missing DSH requirement means an old Harness installs the plugin and then
+  // silently does nothing: the page has no `agentPresets` service to register
+  // with. Declaring the range makes the install itself refuse.
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  check('the manifest declares a DSH requirement', typeof manifest.engines?.dsh === 'string' && manifest.engines.dsh.trim() !== '', JSON.stringify(manifest.engines));
+  check('the DSH requirement is not a workspace range', !String(manifest.engines?.dsh).startsWith('workspace:'), String(manifest.engines?.dsh));
+  check('the manifest declares a Node requirement', typeof manifest.engines?.node === 'string' && manifest.engines.node.trim() !== '', JSON.stringify(manifest.engines));
+  check('the bundle patch is shipped', Array.isArray(manifest.files) && manifest.files.includes('cordis.patch.yml'), JSON.stringify(manifest.files));
+}
+
 for (const dispose of disposals.reverse()) {
   try {
     if (typeof dispose === 'function') await dispose();

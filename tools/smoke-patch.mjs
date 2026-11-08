@@ -9,7 +9,7 @@
  * row, or refuse and say why. Never write something that reads back differently
  * from what the user typed.
  */
-import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -366,7 +366,53 @@ function readBack(file, index = 0) {
   }
 }
 
-for (const name of ['literal.yml', 'folded.yml', 'inline.yml', 'quoted.yml', 'surgical.yml', 'norow.yml', 'nopersona.yml', 'idempotent.yml', 'fields.yml', 'quoting.yml', 'missingfield.yml', 'backup.yml']) {
+/* ------------------------------------------------ backup history stays bounded */
+
+{
+  // Every save leaves a full copy of the profile patch. Unbounded, that is how a
+  // profile directory ends up mostly backups — so old ones are pruned, and only
+  // the ones this module wrote are ever considered for pruning.
+  const file = makeFile('bounded.yml', [
+    '- insert:',
+    '    - id: preset-r',
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:',
+    '        plugins:',
+    '          - id: persona',
+    "            name: '@deepseek-ai/dsh-persona'",
+    '            config:',
+    '              prefix: |-',
+    '                旧',
+    '',
+  ]);
+  // A hand-made backup that must survive: it does not carry this module's name.
+  const handmade = join(dir, 'bounded.yml.bak-before-something');
+  writeFileSync(handmade, 'hand written\n', 'utf8');
+
+  const snapshot = () => readdirSync(dir).filter((n) => n.startsWith('bounded.yml.bak-personamanager-'));
+  let last = null;
+  for (let i = 0; i < 8; i += 1) {
+    last = await replacePersonaInFile(file, 'r', `第 ${i} 版`);
+    check(`save ${i} succeeds`, last.status === 'written', last.status);
+  }
+  const kept = snapshot();
+  check('old backups are pruned', kept.length === 5, String(kept.length));
+  check('the newest backup survives', existsSync(last.backup), last.backup);
+  check(
+    'the newest backup holds the previous version',
+    readFileSync(last.backup, 'utf8').includes('第 6 版'),
+    'expected the text from the save before last',
+  );
+  check('a hand-made backup is left alone', existsSync(handmade));
+  check('pruned files are reported', Array.isArray(last.pruned) && last.pruned.length > 0, JSON.stringify(last.pruned));
+  // Two writes in the same millisecond must not clobber one copy.
+  const a = await replacePersonaInFile(file, 'r', '同毫秒 A');
+  const b = await replacePersonaInFile(file, 'r', '同毫秒 B');
+  check('a same-millisecond save gets its own backup', a.backup !== b.backup || a.status !== 'written', `${a.backup} / ${b.backup}`);
+  if (existsSync(handmade)) unlinkSync(handmade);
+}
+
+for (const name of ['literal.yml', 'folded.yml', 'inline.yml', 'quoted.yml', 'surgical.yml', 'norow.yml', 'nopersona.yml', 'idempotent.yml', 'fields.yml', 'quoting.yml', 'missingfield.yml', 'backup.yml', 'bounded.yml']) {
   const file = join(dir, name);
   if (existsSync(file)) unlinkSync(file);
 }

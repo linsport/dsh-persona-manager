@@ -4,6 +4,10 @@
   "description": "Manage DeepSeek Harness agent presets (personas) from the Web UI settings: create, edit and delete persona presets in place, copy an existing preset as a base, import a Markdown document, and export a JSON backup or a persona document.",
   "type": "module",
   "main": "./lib/index.js",
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.1.7"
+  },
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
