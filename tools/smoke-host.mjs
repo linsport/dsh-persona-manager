@@ -107,6 +107,12 @@ plugins:
     name: '@deepseek-ai/dsh-tool-fs'
     config:
       applyPatch: false
+  - id: tool-plugin-manager
+    name: '@deepseek-ai/dsh-plugin-manager/tools'
+    disabled: !!js "!ctx.get('profileContext')"
+  - id: impossible-row
+    name: '@deepseek-ai/dsh-tool-impossible'
+    disabled: !!js "ctx.get('noSuchService').whatever()"
 `;
 
 const fakeAgentPresets = {
@@ -173,6 +179,9 @@ function makeCtx() {
   return {
     get(name) {
       if (name === 'configEditor') return fakeConfigEditor;
+      // A profile-launched Harness provides this; `!!js "!ctx.get('profileContext')"`
+      // rows depend on it being visible.
+      if (name === 'profileContext') return { name: 'desktop', dir: home };
       return undefined;
     },
     agentPresets: fakeAgentPresets,
@@ -291,6 +300,24 @@ check(
   created.plugins.find((row) => row.id === 'tool-pwsh').disabled === (process.platform !== 'win32'),
 );
 check('plain config survived', created.plugins.find((row) => row.id === 'tool-fs').config.applyPatch === false);
+// A row guarded by `!!js "!ctx.get('profileContext')"` resolves to "not disabled"
+// when the profile context is present, so the copied preset keeps the tool.
+check(
+  'ctx.get() condition evaluates against the loader context',
+  created.plugins.find((row) => row.id === 'tool-plugin-manager')?.disabled === false,
+  JSON.stringify(created.plugins.find((row) => row.id === 'tool-plugin-manager')),
+);
+check(
+  'a resolvable ctx condition raises no warning',
+  !(result.body.warnings ?? []).some((line) => line.includes('tool-plugin-manager')),
+  JSON.stringify(result.body.warnings),
+);
+check(
+  'an unevaluable row is still kept disabled and warned about',
+  created.plugins.find((row) => row.id === 'impossible-row')?.disabled === true &&
+    (result.body.warnings ?? []).some((line) => line.includes('impossible-row')),
+  JSON.stringify(result.body.warnings),
+);
 
 result = await call('create', { id: 'my-persona', name: 'dup', basePreset: 'base', persona: 'x' });
 check('duplicate id rejected', result.body.ok === false, JSON.stringify(result.body));
