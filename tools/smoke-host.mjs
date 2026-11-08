@@ -587,6 +587,15 @@ check('refused request changed nothing', registered.has('my-persona'));
   check('the DSH requirement is not a workspace range', !String(manifest.engines?.dsh).startsWith('workspace:'), String(manifest.engines?.dsh));
   check('the manifest declares a Node requirement', typeof manifest.engines?.node === 'string' && manifest.engines.node.trim() !== '', JSON.stringify(manifest.engines));
   check('the bundle patch is shipped', Array.isArray(manifest.files) && manifest.files.includes('cordis.patch.yml'), JSON.stringify(manifest.files));
+  check('the manifest carries a plain semver version', /^\d+\.\d+\.\d+$/.test(String(manifest.version)), String(manifest.version));
+  check('the changelog is shipped', Array.isArray(manifest.files) && manifest.files.includes('CHANGELOG.md'), JSON.stringify(manifest.files));
+  // A release tag that disagrees with the manifest makes the two disagree for
+  // anyone reading the repository. Keep them provably in step.
+  {
+    const changelog = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
+    const head = changelog.split('\n').find((line) => /^##\s/.test(line)) ?? '';
+    check('the changelog leads with the manifest version', head.includes(`## ${manifest.version}`), head);
+  }
 }
 
 for (const dispose of disposals.reverse()) {

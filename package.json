@@ -1,6 +1,6 @@
 {
   "name": "dsh-persona-manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Manage DeepSeek Harness agent presets (personas) from the Web UI settings: create, edit and delete persona presets in place, copy an existing preset as a base, import a Markdown document, and export a JSON backup or a persona document.",
   "type": "module",
   "main": "./lib/index.js",
@@ -23,6 +23,7 @@
     "cordis.patch.yml",
     "icon.svg",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "keywords": [
