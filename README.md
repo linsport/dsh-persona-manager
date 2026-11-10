@@ -237,15 +237,17 @@ DSH 的一个 Agent 预设，本质是一串 Cordis 插件列表：一段人设�
 
 ## 安装
 
-**桌面版是主要安装方式**：打开 **设置 → 插件**，安装或启用 `dsh-persona-manager`，然后打开 **设置 → 人设预设**。桌面端会自己启动本地服务，装完不需要单独跑命令；界面代码更新后按 `Ctrl + F5` 强刷。
+**桌面版是主要安装方式**：打开 **设置 → 插件 → 添加插件**，把仓库地址 `https://github.com/linsport/dsh-persona-manager` 贴进去，安装或启用它，然后打开 **设置 → 人设预设**。桌面端会自己启动本地服务，装完不需要单独跑命令；界面代码更新后按 `Ctrl + F5` 强刷。
 
 **命令行**：
 
 ```bash
-dsh plugin --profile <profile> add dsh-persona-manager
+dsh plugin --profile <profile> add github:linsport/dsh-persona-manager
 ```
 
 或者用插件管理器指向这个目录。
+
+> ⚠️ 别写成裸的 `dsh-persona-manager`。这个包名在 npm 上被别人占着，现在挂的是 `0.0.0-stage` 占位包，装上没有任何功能。`github:` 前缀就是让它去 GitHub 拿仓库；本插件尚未发布 npm 包。
 
 > 如果你手动改了 profile 的 `package.json`，改完要**重启桌面端**插件才会被加载，且网页端口会变——见上一节的说明。
 
