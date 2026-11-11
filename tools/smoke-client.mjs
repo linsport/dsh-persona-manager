@@ -66,6 +66,13 @@ let stateResponse = { ok: true, ready: true, managed: [], external: [], warnings
 let exampleResponse = { ok: true, examples: [] };
 /** Served for the `example` route, i.e. reading one bundled sample. */
 let exampleBody = { ok: true, name: '', persona: '' };
+/**
+ * Forces the next write to fail: `{ status, error }` makes the host answer
+ * with a rejection, `null` lets it succeed. The save flow has two branches —
+ * close the editor, or keep it and show why — and only a rejected write can
+ * exercise the second one.
+ */
+let writeFailure = null;
 
 const globals = {
   navigator: { language: 'zh-CN' },
@@ -85,9 +92,25 @@ const globals = {
     let payload = stateResponse;
     if (path.endsWith('/examples')) payload = exampleResponse;
     else if (path.endsWith('/example')) payload = exampleBody;
+    // Writes answer from the same state payload unless a case forces a
+    // rejection, so a save looks like any other host call by default.
+    if (writeFailure !== null && /\/create$|\/update$/.test(path)) {
+      return Promise.resolve({
+        ok: false,
+        status: writeFailure.status,
+        json: async () => ({ ok: false, error: writeFailure.error }),
+      });
+    }
     return Promise.resolve({ ok: true, status: 200, json: async () => payload });
   },
-  FileReader: class {},
+  // Reads the text the test hung on the fake file, then reports it the way the
+  // real reader does: asynchronously, through `onload`.
+  FileReader: class {
+    readAsText(file) {
+      this.result = file.__text;
+      if (typeof this.onload === 'function') this.onload();
+    }
+  },
   Blob: class {},
   URL: { createObjectURL: () => 'blob:x', revokeObjectURL() {} },
   console,
@@ -730,6 +753,328 @@ exampleBody = { ok: true, name: '鲸鱼娘', persona: '## 一、优先级栈\n\n
     // Loading fills the editor; it must not silently create a preset.
     check('loading an example did not create a preset', stateResponse.managed.length === 0);
   }
+}
+
+// --- saving closes the editor on success and keeps it on failure -----------
+// A rejected write must leave the typed body in place: the user has to be able
+// to fix the field that was wrong without retyping the whole persona.
+stateSlots = [];
+writeFailure = null;
+stateResponse = {
+  ok: true,
+  ready: true,
+  managed: [],
+  builtin: [{ id: 'standard', name: '标准模式', isDefault: true, broken: null, kind: 'shipped', order: 1 }],
+  warnings: [],
+  libraryPath: '/tmp/x.json',
+};
+
+/**
+ * Render the page from the current state, flushing the effects it schedules.
+ *
+ * Every render has to start its hook slots from zero: the component's hook list
+ * is replayed per render, so a stale counter silently shifts every following
+ * `useState`/`useCallback` onto the wrong slot.
+ *
+ * `flushEffects: false` renders the state as it stands. This stub records
+ * effects on every render, while real React only re-runs one when its deps
+ * change, so flushing again would re-run the mount fetch — and `refresh()`
+ * starts by clearing the error the previous step just set.
+ */
+function renderPage(options) {
+  const flushEffects = options?.flushEffects !== false;
+  hookIndex = 0;
+  pendingEffects = [];
+  slots.Component({ close() {} });
+  if (flushEffects) {
+    for (const effect of pendingEffects.splice(0)) {
+      try {
+        effect();
+      } catch (err) {
+        console.log('  effect threw:', err.message);
+      }
+    }
+  }
+  pendingEffects = [];
+  hookIndex = 0;
+  return expand(slots.Component({ close() {} }));
+}
+
+/** Fill the open editor and click Save; returns the tree rendered afterwards. */
+async function fillAndSave(value) {
+  const area = findAll(renderPage(), (n) => n.type === 'textarea')[0];
+  area.props.onChange({ target: { value } });
+  const withBody = renderPage();
+  const saveButton = findAll(withBody, (n) => n.type === 'button' && text(n) === '保存')[0];
+  saveButton.props.onClick();
+  // `save` awaits `run`, which awaits the host call, which awaits the response
+  // body: three hops before the outcome reaches state. Draining the queue a
+  // fixed number of times would be a guess, so drain it until it stops moving.
+  for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+  return renderPage({ flushEffects: false });
+}
+
+{
+  const fresh = await settle();
+  const newBtn = findAll(fresh, (n) => n.type === 'button' && text(n).includes('新建预设'))[0];
+  newBtn.props.onClick();
+  renderPage();
+
+  // Failure first: the editor must survive with the body still in it.
+  writeFailure = { status: 400, error: 'id must use lowercase letters, digits and hyphens' };
+  const afterFail = await fillAndSave('## 失败也要留住这段正文');
+  check(
+    'a rejected save keeps the editor open',
+    findAll(afterFail, (n) => n.type === 'textarea').length === 1,
+  );
+  check(
+    'a rejected save keeps the typed body',
+    String(findAll(afterFail, (n) => n.type === 'textarea')[0]?.props.value ?? '').includes('失败也要留住这段正文'),
+  );
+  check(
+    'a rejected save shows why',
+    text(afterFail).includes('lowercase letters'),
+    text(afterFail).slice(0, 160),
+  );
+
+  // Success: same click, a host that accepts it, editor goes away.
+  writeFailure = null;
+  const afterOk = await fillAndSave('## 保存成功这段应该消失');
+  check(
+    'a successful save closes the editor',
+    findAll(afterOk, (n) => n.type === 'textarea').length === 0,
+  );
+  check(
+    'a successful save says so',
+    text(afterOk).includes('预设已创建'),
+    text(afterOk).slice(0, 160),
+  );
+}
+
+// --- saving an existing preset closes it too -------------------------------
+stateSlots = [];
+writeFailure = null;
+stateResponse = {
+  ok: true,
+  ready: true,
+  managed: [
+    {
+      id: 'demo',
+      name: '演示卡片',
+      description: '示例说明',
+      order: 1,
+      basePreset: 'whale',
+      persona: '原正文',
+      pluginCount: 22,
+      active: true,
+      broken: null,
+      origin: 'library',
+      editable: true,
+    },
+  ],
+  builtin: [{ id: 'standard', name: '标准模式', isDefault: true, broken: null, kind: 'shipped', order: 1 }],
+  warnings: [],
+  libraryPath: '/tmp/x.json',
+};
+
+{
+  const listTree = await settle();
+  const editButtons = findAll(listTree, (n) => n.type === 'button' && text(n) === '编辑');
+  check('the managed card offers an edit action', editButtons.length === 1, String(editButtons.length));
+  if (editButtons.length === 1) {
+    editButtons[0].props.onClick();
+    const editing = renderPage();
+    check('editing an existing preset opens the editor', findAll(editing, (n) => n.type === 'textarea').length === 1);
+
+    // Failure on update keeps the panel too, not just on create.
+    writeFailure = { status: 500, error: 'cannot write the library' };
+    const failedUpdate = await fillAndSave('改了一点');
+    check(
+      'a rejected update keeps the editor open',
+      findAll(failedUpdate, (n) => n.type === 'textarea').length === 1,
+    );
+
+    writeFailure = null;
+    const okUpdate = await fillAndSave('改好了');
+    check(
+      'a successful update closes the editor',
+      findAll(okUpdate, (n) => n.type === 'textarea').length === 0,
+    );
+  }
+}
+
+// --- importing a Markdown file opens a draft with the file's text ----------
+// A `.md` file carries prose only, so it cannot be merged into the library: the
+// editor opens with the text loaded and every other field at its own default.
+stateSlots = [];
+writeFailure = null;
+stateResponse = {
+  ok: true,
+  ready: true,
+  managed: [],
+  builtin: [
+    { id: 'standard', name: '标准模式', isDefault: true, broken: null, kind: 'shipped', order: 1 },
+    { id: 'ptc', name: 'PTC 模式', broken: null, kind: 'shipped', order: 2 },
+  ],
+  warnings: [],
+  libraryPath: '/tmp/x.json',
+};
+
+{
+  const beforeImport = await settle();
+  const fileInput = findAll(beforeImport, (n) => n.type === 'input' && n.props.type === 'file')[0];
+  check('the toolbar offers a file input', fileInput !== undefined);
+
+  if (fileInput !== undefined) {
+    fileInput.props.onChange({
+      target: {
+        files: [{ name: '我的角色.md', __text: '## 标题\r\n\r\n正文内容' }],
+        value: 'C:\\fakepath\\我的角色.md',
+      },
+    });
+    const afterImport = renderPage();
+    check('a Markdown import opens the editor', findAll(afterImport, (n) => n.type === 'textarea').length === 1);
+
+    // The two fields that share a row, read by position rather than by guessing
+    // a selector. Index 0 is the toolbar's hidden file input, so the row starts
+    // at 1: id, then name, then order.
+    const rowInputs = findAll(afterImport, (n) => n.type === 'input').filter((n) => n.props.type !== 'file');
+    const idValue = rowInputs[0]?.props.value;
+    const nameValue = rowInputs[1]?.props.value;
+    const orderValue = rowInputs[2]?.props.value;
+    check('an imported id starts empty', idValue === '', JSON.stringify(idValue));
+    check('the file name seeds the display name', nameValue === '我的角色', JSON.stringify(nameValue));
+    // A fixed 100 used to be hard-coded here while every other new draft took
+    // `max + 1`, so two presets could share an order and the list fell back to
+    // alphabetical id. The shipped presets in this fixture are 1 and 2, so the
+    // imported draft must land on 3.
+    check('the imported draft takes the next free order', orderValue === 3, JSON.stringify(orderValue));
+    check(
+      'the imported body lands in the persona field',
+      String(findAll(afterImport, (n) => n.type === 'textarea')[0]?.props.value ?? '').includes('正文内容'),
+    );
+    check(
+      'CRLF is normalised on import',
+      !String(findAll(afterImport, (n) => n.type === 'textarea')[0]?.props.value ?? '').includes('\r'),
+    );
+  }
+}
+
+// --- the export panel and the editor never show at once --------------------
+// Both are tall panels above the list. Rendering them together pushed the
+// second one below the fold and gave the page two competing main tasks.
+stateSlots = [];
+writeFailure = null;
+stateResponse = {
+  ok: true,
+  ready: true,
+  managed: [],
+  builtin: [{ id: 'standard', name: '标准模式', isDefault: true, broken: null, kind: 'shipped', order: 1 }],
+  warnings: [],
+  libraryPath: '/tmp/x.json',
+};
+
+{
+  const start = await settle();
+  const newBtn = findAll(start, (n) => n.type === 'button' && text(n).includes('新建预设'))[0];
+  newBtn.props.onClick();
+  const withEditor = renderPage();
+  check('the editor is open before exporting', findAll(withEditor, (n) => n.type === 'textarea').length === 1);
+
+  // Type something first: it has to survive a round trip through the export
+  // panel, otherwise opening export silently destroys the draft.
+  const area = findAll(withEditor, (n) => n.type === 'textarea')[0];
+  area.props.onChange({ target: { value: '导出期间不要弄丢这段' } });
+  const typed = renderPage();
+
+  const exportBtn = findAll(typed, (n) => n.type === 'button' && text(n) === '导出')[0];
+  check('the toolbar offers an export action', exportBtn !== undefined);
+  exportBtn.props.onClick();
+  const exporting = renderPage();
+
+  check(
+    'opening export hides the editor',
+    findAll(exporting, (n) => n.type === 'textarea').length === 0,
+    `still ${findAll(exporting, (n) => n.type === 'textarea').length}`,
+  );
+  check('opening export shows one panel', findAll(exporting, (n) => n.type === 'button' && text(n) === '导出').length >= 1);
+
+  // Cancel goes back to the draft, body intact.
+  const cancel = findAll(exporting, (n) => n.type === 'button' && text(n) === '取消')[0];
+  check('the export panel can be cancelled', cancel !== undefined);
+  cancel.props.onClick();
+  const back = renderPage();
+  check('cancelling export brings the editor back', findAll(back, (n) => n.type === 'textarea').length === 1);
+  check(
+    'the draft survived the export panel',
+    String(findAll(back, (n) => n.type === 'textarea')[0]?.props.value ?? '').includes('导出期间不要弄丢这段'),
+  );
+
+  // Opening the editor from inside the export panel. The panels are mutually
+  // exclusive, so the action the user just clicked has to win: a New preset
+  // that leaves the export panel on screen looks like the button did nothing.
+  exportBtn.props.onClick();
+  const exportingAgain = renderPage();
+  check('export reopens from the draft', findAll(exportingAgain, (n) => n.type === 'textarea').length === 0);
+
+  const newFromExport = findAll(exportingAgain, (n) => n.type === 'button' && text(n).includes('新建预设'))[0];
+  newFromExport.props.onClick();
+  const afterNewFromExport = renderPage();
+  check(
+    'New preset from inside export switches to the editor',
+    findAll(afterNewFromExport, (n) => n.type === 'textarea').length === 1,
+  );
+  check(
+    'New preset from inside export clears the draft body',
+    String(findAll(afterNewFromExport, (n) => n.type === 'textarea')[0]?.props.value ?? '') === '',
+  );
+}
+
+// The same rule for editing an existing card, which does not go through
+// `openNew`: it sets the selection directly.
+stateSlots = [];
+stateResponse = {
+  ok: true,
+  ready: true,
+  managed: [
+    {
+      id: 'demo',
+      name: '演示卡片',
+      description: '',
+      order: 1,
+      basePreset: 'whale',
+      persona: '原有正文',
+      pluginCount: 22,
+      active: true,
+      broken: null,
+      origin: 'library',
+      editable: true,
+    },
+  ],
+  builtin: [{ id: 'standard', name: '标准模式', isDefault: true, broken: null, kind: 'shipped', order: 1 }],
+  warnings: [],
+  libraryPath: '/tmp/x.json',
+};
+
+{
+  const list = await settle();
+  const openExport = findAll(list, (n) => n.type === 'button' && text(n) === '导出')[0];
+  openExport.props.onClick();
+  const exporting = renderPage();
+  check('export opens with a card present', findAll(exporting, (n) => n.type === 'textarea').length === 0);
+
+  const editBtn = findAll(exporting, (n) => n.type === 'button' && text(n) === '编辑')[0];
+  check('the card edit action is still reachable', editBtn !== undefined);
+  editBtn.props.onClick();
+  const afterEdit = renderPage();
+  check(
+    'editing a card from inside export switches to the editor',
+    findAll(afterEdit, (n) => n.type === 'textarea').length === 1,
+  );
+  check(
+    'the edited body is the card body',
+    String(findAll(afterEdit, (n) => n.type === 'textarea')[0]?.props.value ?? '') === '原有正文',
+  );
 }
 
 console.log(failures === 0 ? '\nall render checks passed' : `\n${failures} render check(s) failed`);
