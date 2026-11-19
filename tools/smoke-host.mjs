@@ -465,41 +465,28 @@ check('a backup was written', existsSync(profileFile + '.bak-personamanager-' + 
   check('a library preset does not mark its base as locked', owned.basePresetLocked !== true, JSON.stringify(owned.basePresetLocked));
 }
 
-/* ------------------------------------------------------- bundled examples */
+/* ------------------------------------- no bundled samples, no sample routes */
 
-result = await call('examples');
-check('the examples route answers', result.status === 200 && result.body.ok === true, JSON.stringify(result.body));
+// The plugin used to ship an example persona and two routes to serve it. Both
+// are gone: a sample that has to be deleted by every user who does not want it
+// is worse than a link to a repository that is actually maintained. The routes
+// must be gone too, not merely unused — a registered route that reads a deleted
+// directory is a 500 waiting for its first caller.
 check(
-  'a bundled example is listed',
-  Array.isArray(result.body.examples) && result.body.examples.length >= 1,
-  JSON.stringify(result.body.examples),
+  'the examples route is not registered',
+  !routes.has('/api/dsh-persona-manager/examples'),
+  JSON.stringify([...routes.keys()]),
 );
-{
-  const row = result.body.examples[0];
-  check('an example carries a display name', typeof row.name === 'string' && row.name !== '', JSON.stringify(row.name));
-  // The name comes from the metadata comment, not from the filename, so a
-  // non-ASCII filename never becomes the label.
-  check('an example is not labelled by its filename', row.name !== row.fileName, `${row.name} / ${row.fileName}`);
-  check('an example carries a summary', typeof row.summary === 'string' && row.summary !== '', JSON.stringify(row.summary));
-}
-
-result = await call('example', { name: result.body.examples[0].name });
-check('an example can be read', result.body.ok === true, JSON.stringify(result.body.error));
-{
-  const persona = result.body.persona;
-  check('the example body is substantial', typeof persona === 'string' && persona.length > 1000, String(persona?.length));
-  // The metadata comment must not end up inside the persona text.
-  check('the metadata header is stripped', !persona.includes('dsh-persona-manager:'), persona.slice(0, 80));
-  check('the body starts with the persona itself', persona.startsWith('## '), JSON.stringify(persona.slice(0, 40)));
-}
-
-result = await call('example', { name: 'no-such-example' });
-check('an unknown example is refused', result.body.ok === false, JSON.stringify(result.body));
-result = await call('example', { name: '../package.json' });
-check('a path traversal is refused', result.body.ok === false, JSON.stringify(result.body));
-
-// Reading examples must not create anything.
-check('examples do not create presets', !registered.has('鲸鱼娘'));
+check(
+  'the single-example route is not registered',
+  !routes.has('/api/dsh-persona-manager/example'),
+  JSON.stringify([...routes.keys()]),
+);
+check(
+  'the plugin still registers no preset of its own',
+  !registered.has('鲸鱼娘'),
+  JSON.stringify([...registered.keys()]),
+);
 
 /* ------------------------------ a folded persona is refused, not corrupted */
 

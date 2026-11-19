@@ -62,10 +62,8 @@ const React = {
 /* ---------------------------------------------------------- fake globals */
 
 let stateResponse = { ok: true, ready: true, managed: [], external: [], warnings: [] };
-/** Served for the `examples` route; empty by default so earlier cases are unaffected. */
-let exampleResponse = { ok: true, examples: [] };
-/** Served for the `example` route, i.e. reading one bundled sample. */
-let exampleBody = { ok: true, name: '', persona: '' };
+/** Every URL the page asked for, so a call to a removed route is detectable. */
+let fetched = [];
 /**
  * Forces the next write to fail: `{ status, error }` makes the host answer
  * with a rejection, `null` lets it succeed. The save flow has two branches —
@@ -89,9 +87,8 @@ const globals = {
   // place.
   fetch: (url) => {
     const path = String(url).split('?')[0];
+    fetched.push(path);
     let payload = stateResponse;
-    if (path.endsWith('/examples')) payload = exampleResponse;
-    else if (path.endsWith('/example')) payload = exampleBody;
     // Writes answer from the same state payload unless a case forces a
     // rejection, so a save looks like any other host call by default.
     if (writeFailure !== null && /\/create$|\/update$/.test(path)) {
@@ -700,8 +697,13 @@ stateResponse = {
   );
 }
 
-// --- bundled examples are offered, and loading one opens the editor -------
+// --- the plugin no longer ships a sample persona -------------------------
+// A bundled sample had to be deleted by any user who did not want it, so the
+// whole feature is gone. Two things must hold: the page does not render an
+// examples section, and it does not call the old routes either — a request to a
+// route that no longer exists would surface as a failed fetch on every load.
 stateSlots = [];
+fetched.length = 0;
 stateResponse = {
   ok: true,
   ready: true,
@@ -710,49 +712,17 @@ stateResponse = {
   warnings: [],
   libraryPath: '/tmp/x.json',
 };
-// The examples route is fetched on mount; serve it from the routing table.
-exampleResponse = { ok: true, examples: [{ name: '鲸鱼娘', file: '鲸鱼娘.md', fileName: '鲸鱼娘.md', summary: '一份性格与表达范例' }] };
-exampleBody = { ok: true, name: '鲸鱼娘', persona: '## 一、优先级栈\n\n正文' };
 
 {
-  const exTree = await settle();
-  const body = text(exTree);
-  check('the examples section is shown', body.includes('附赠示例'), body.slice(0, 200));
-  check('the example card shows its summary', body.includes('一份性格与表达范例'));
-  check('the examples hint says loading does not create', body.includes('不会自动新增预设'));
-
-  const loadButtons = findAll(exTree, (n) => n.type === 'button' && text(n) === '载入');
-  check('the example card offers a load action', loadButtons.length === 1, String(loadButtons.length));
-  if (loadButtons.length === 1) {
-    loadButtons[0].props.onClick();
-    // The load call is async: let the promise chain settle, then render.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    hookIndex = 0;
-    pendingEffects = [];
-    slots.Component({ close() {} });
-    for (const effect of pendingEffects.splice(0)) {
-      try {
-        effect();
-      } catch (err) {
-        console.log('  effect threw:', err.message);
-      }
-    }
-    hookIndex = 0;
-    pendingEffects = [];
-    const loadedTree = expand(slots.Component({ close() {} }));
-    const areas = findAll(loadedTree, (n) => n.type === 'textarea');
-    check('loading an example opens the editor', areas.length === 1, String(areas.length));
-    if (areas.length === 1) {
-      check(
-        'the loaded body is in the persona field',
-        String(areas[0].props.value).includes('优先级栈'),
-        JSON.stringify(String(areas[0].props.value).slice(0, 40)),
-      );
-    }
-    // Loading fills the editor; it must not silently create a preset.
-    check('loading an example did not create a preset', stateResponse.managed.length === 0);
-  }
+  const plainTree = await settle();
+  const body = text(plainTree);
+  check('no examples section is rendered', !body.includes('附赠示例'), body.slice(0, 200));
+  check('no load action is rendered', findAll(plainTree, (n) => n.type === 'button' && text(n) === '载入').length === 0);
+  check(
+    'no sample route is requested',
+    !fetched.some((path) => /\/examples?$/.test(path)),
+    JSON.stringify(fetched),
+  );
 }
 
 // --- saving closes the editor on success and keeps it on failure -----------
@@ -1075,6 +1045,84 @@ stateResponse = {
     'the edited body is the card body',
     String(findAll(afterEdit, (n) => n.type === 'textarea')[0]?.props.value ?? '') === '原有正文',
   );
+}
+
+// --- importing while editing replaces the body, it does not start over -----
+// Import used to call `openNew` unconditionally, so importing from inside an
+// existing preset silently abandoned it and left a blank draft behind.
+stateSlots = [];
+writeFailure = null;
+stateResponse = {
+  ok: true,
+  ready: true,
+  managed: [
+    {
+      id: 'demo',
+      name: '演示卡片',
+      description: '示例说明',
+      order: 1,
+      basePreset: 'whale',
+      persona: '原有正文',
+      pluginCount: 22,
+      active: true,
+      broken: null,
+      origin: 'library',
+      editable: true,
+    },
+  ],
+  builtin: [{ id: 'standard', name: '标准模式', isDefault: true, broken: null, kind: 'shipped', order: 1 }],
+  warnings: [],
+  libraryPath: '/tmp/x.json',
+};
+
+/**
+ * Feed a fake file to the toolbar's hidden input and render the result.
+ *
+ * `flushEffects: false` matters for the in-place import: the draft-sync effect
+ * is keyed on `[selectedId, selected]`, so real React does not re-run it after
+ * an import — and this stub would, resetting the draft to the stored persona
+ * and hiding the very change under test.
+ */
+function importFile(name, text, options) {
+  const tree = renderPage();
+  const input = findAll(tree, (n) => n.type === 'input' && n.props.type === 'file')[0];
+  input.props.onChange({ target: { files: [{ name, __text: text }], value: `C:\\fakepath\\${name}` } });
+  return renderPage({ flushEffects: options?.flushEffects !== false });
+}
+
+{
+  const list = await settle();
+  const editBtn = findAll(list, (n) => n.type === 'button' && text(n) === '编辑')[0];
+  editBtn.props.onClick();
+  const editing = renderPage();
+  check('editing opens before the import', findAll(editing, (n) => n.type === 'textarea').length === 1);
+
+  const afterImport = importFile('新正文.md', '## 换掉的内容\n\n这是导入进来的', { flushEffects: false });
+  const area = findAll(afterImport, (n) => n.type === 'textarea')[0];
+  check('importing while editing keeps the editor open', area !== undefined);
+  check(
+    'importing while editing replaces the body',
+    String(area?.props.value ?? '').includes('这是导入进来的'),
+  );
+  check(
+    'importing while editing does not keep the old body',
+    !String(area?.props.value ?? '').includes('原有正文'),
+  );
+
+  // Identity must survive: the same preset is still being edited.
+  const inputs = findAll(afterImport, (n) => n.type === 'input').filter((n) => n.props.type !== 'file');
+  check('the id field still holds the edited preset', inputs[0]?.props.value === 'demo', JSON.stringify(inputs[0]?.props.value));
+  check('the id field stays locked to editing', inputs[0]?.props.disabled === true);
+  check('the display name is untouched', inputs[1]?.props.value === '演示卡片', JSON.stringify(inputs[1]?.props.value));
+  check(
+    'the notice says it replaced the body',
+    text(afterImport).includes('替换') || text(afterImport).includes('replaced'),
+    text(afterImport).slice(0, 200),
+  );
+
+  // Saving now must update, not create: the payload carries the existing id.
+  const savedTree = await fillAndSave('保存后的正文');
+  check('saving after an in-place import closes the editor', findAll(savedTree, (n) => n.type === 'textarea').length === 0);
 }
 
 console.log(failures === 0 ? '\nall render checks passed' : `\n${failures} render check(s) failed`);
