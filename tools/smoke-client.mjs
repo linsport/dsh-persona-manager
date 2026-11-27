@@ -1125,5 +1125,74 @@ function importFile(name, text, options) {
   check('saving after an in-place import closes the editor', findAll(savedTree, (n) => n.type === 'textarea').length === 0);
 }
 
+// --- importing into a half-filled new form keeps every typed field ---------
+// The import used to rebuild the draft from the file, so picking a `.md` after
+// typing an id, name, description and order silently threw all four away. A
+// Markdown file carries only prose: it may fill the textarea, nothing else.
+stateSlots = [];
+writeFailure = null;
+stateResponse = {
+  ok: true,
+  ready: true,
+  managed: [],
+  builtin: [{ id: 'standard', name: '标准模式', isDefault: true, broken: null, kind: 'shipped', order: 1 }],
+  warnings: [],
+  libraryPath: '/tmp/x.json',
+};
+
+{
+  const fresh = await settle();
+  findAll(fresh, (n) => n.type === 'button' && text(n).includes('新建预设'))[0].props.onClick();
+  renderPage();
+
+  // Type the form first, in the order the panel shows it: id, name, order, then
+  // the description on its own row below.
+  const empty = renderPage({ flushEffects: false });
+  const fields = findAll(empty, (n) => n.type === 'input').filter((n) => n.props.type !== 'file');
+  fields[0].props.onChange({ target: { value: 'my-persona' } });
+  renderPage();
+  findAll(renderPage({ flushEffects: false }), (n) => n.type === 'input')
+    .filter((n) => n.props.type !== 'file')[1]
+    .props.onChange({ target: { value: '人设原文' } });
+  renderPage();
+  findAll(renderPage({ flushEffects: false }), (n) => n.type === 'input')
+    .filter((n) => n.props.type === 'number')[0]
+    .props.onChange({ target: { value: '6' } });
+  renderPage();
+  findAll(renderPage({ flushEffects: false }), (n) => n.type === 'input')
+    .filter((n) => n.props.type !== 'file' && n.props.type !== 'number')[2]
+    .props.onChange({ target: { value: '我自己的说明' } });
+  renderPage();
+
+  const filled = renderPage({ flushEffects: false });
+  const filledInputs = findAll(filled, (n) => n.type === 'input').filter((n) => n.props.type !== 'file');
+  check('the typed form is actually filled', filledInputs[0]?.props.value === 'my-persona', JSON.stringify(filledInputs[0]?.props.value));
+
+  const afterImport = importFile('人设原文.md', '## 导入进来的正文\n\n内容', { flushEffects: false });
+  const inputs = findAll(afterImport, (n) => n.type === 'input').filter((n) => n.props.type !== 'file');
+  const values = inputs.map((n) => n.props.value);
+  check('a typed id survives an import', values[0] === 'my-persona', JSON.stringify(values));
+  check('a typed display name survives an import', values[1] === '人设原文', JSON.stringify(values));
+  check('a typed order survives an import', values[2] === '6', JSON.stringify(values));
+  check('a typed description survives an import', values[3] === '我自己的说明', JSON.stringify(values));
+  check(
+    'the imported body still lands in the textarea',
+    String(findAll(afterImport, (n) => n.type === 'textarea')[0]?.props.value ?? '').includes('导入进来的正文'),
+  );
+  check(
+    'the notice does not promise a blank id to fill in',
+    !text(afterImport).includes('填好 ID 和名称'),
+    text(afterImport).slice(0, 200),
+  );
+
+  // With no name typed, the file name still seeds one: the "pick a file first"
+  // path must not produce an unnamed preset.
+  const freshAgain = await settle();
+  findAll(freshAgain, (n) => n.type === 'button' && text(n).includes('新建预设'))[0].props.onClick();
+  const unnamed = importFile('空白表单.md', '## 只有正文');
+  const unnamedName = findAll(unnamed, (n) => n.type === 'input').filter((n) => n.props.type !== 'file')[1];
+  check('an empty name still takes the file name', unnamedName?.props.value === '空白表单', JSON.stringify(unnamedName?.props.value));
+}
+
 console.log(failures === 0 ? '\nall render checks passed' : `\n${failures} render check(s) failed`);
 if (failures !== 0) process.exitCode = 1;
